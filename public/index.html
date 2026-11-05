@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Calculadora de gasolina: cuánto cuesta el viaje y cuánto paga cada uno</title>
+<meta name="description" content="Calcula la gasolina de tu viaje con paradas y reparte el coste entre los pasajeros. Con precios oficiales de carburante en España.">
+<style>
+:root{--bg:#eef2ee;--surface:#fbfdfb;--ink:#17261f;--muted:#5d6e65;--line:#cfd9d2;--accent:#1f6f54;--accent-ink:#fff;--result:#17261f;--result-ink:#f1f6f2;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{color-scheme:dark;--bg:#0f1713;--surface:#17221c;--ink:#e8f0ea;--muted:#93a69a;--line:#2a3a31;--accent:#5fc79b;--accent-ink:#0b1510;--result:#e8f0ea;--result-ink:#0f1713}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",system-ui,-apple-system,Roboto,sans-serif;line-height:1.45}
+main{max-width:520px;margin:0 auto;padding:24px 16px 40px;display:grid;gap:16px}
+h1{font-size:1.6rem;margin:0 0 4px;letter-spacing:-.01em}h2{font-size:1.05rem;margin:0 0 12px}
+.sub{margin:0;color:var(--muted);font-size:.95rem}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.full{grid-column:1/-1}
+label{display:block;font-size:.85rem;color:var(--muted);margin-bottom:4px}
+input[type=number],input[type=text],select{width:100%;font:inherit;font-size:1.05rem;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--ink)}
+input:focus-visible,button:focus-visible,select:focus-visible{outline:3px solid var(--accent);outline-offset:1px}
+.check{display:flex;align-items:center;gap:10px;font-size:1rem;color:var(--ink);margin:0;cursor:pointer}
+.check input{width:20px;height:20px;accent-color:var(--accent)}
+.hint,.note{font-size:.8rem;color:var(--muted);margin-top:4px}
+.stop{display:flex;gap:8px;margin-bottom:10px;align-items:flex-end}.stop>div{flex:1}
+button{font:inherit;cursor:pointer;border-radius:8px;border:1px solid var(--line);background:var(--surface);color:var(--ink);padding:10px 12px}
+button.x{width:42px;padding:10px 0;color:var(--muted)}
+button.main{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600;width:100%;padding:12px}
+button:disabled{opacity:.6;cursor:default}
+.legs{margin-top:12px;display:grid;gap:6px;font-size:.92rem}.legs div{display:flex;justify-content:space-between;gap:12px}
+.result{background:var(--result);color:var(--result-ink);border-radius:14px;padding:20px}
+.result .big{font-size:2.8rem;font-weight:700;letter-spacing:-.02em;line-height:1.1}.result .lbl{font-size:.95rem;opacity:.8}
+.rows{margin-top:14px;border-top:1px solid color-mix(in srgb,var(--result-ink) 25%,transparent);padding-top:12px;display:grid;gap:6px;font-size:.95rem}
+.rows div{display:flex;justify-content:space-between;gap:12px}
+.err{color:var(--muted);text-align:center;font-size:.95rem;margin:0}
+footer{text-align:center;font-size:.8rem;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+  <div><h1>Calculadora de gasolina</h1><p class="sub">Pon la ruta, calcula los km y mira cuánto paga cada persona.</p></div>
+
+  <section class="card">
+    <h2>Ruta</h2>
+    <div id="stops"></div>
+    <button type="button" id="add">+ Añadir parada</button>
+    <div style="margin:14px 0 12px"><label class="check"><input id="rt" type="checkbox"> Volver al punto de salida</label></div>
+    <button type="button" class="main" id="go">Calcular distancia</button>
+    <div id="legs" class="legs" aria-live="polite"></div>
+  </section>
+
+  <section class="card">
+    <h2>Coche y reparto</h2>
+    <div class="grid">
+      <div class="full"><label for="km">Distancia total (km)</label><input id="km" type="number" inputmode="decimal" min="0" step="any" placeholder="Se rellena sola, o escríbela"></div>
+      <div><label for="cons">Consumo (L/100 km)</label><input id="cons" type="number" inputmode="decimal" min="0" step="any" placeholder="Ej. 6.5"></div>
+      <div><label for="price">Precio (€/L)</label><input id="price" type="number" inputmode="decimal" min="0" step="any" placeholder="Ej. 1.55"></div>
+      <div><label for="prov">Provincia</label><select id="prov"></select></div>
+      <div><label for="fuel">Combustible</label>
+        <select id="fuel"><option value="gasolina95">Gasolina 95</option><option value="gasolina98">Gasolina 98</option><option value="diesel">Diésel</option><option value="dieselplus">Diésel premium</option></select></div>
+      <div class="full"><button type="button" id="getprice">Usar el precio medio de la zona</button><div class="note" id="pnote" aria-live="polite"></div></div>
+      <div><label for="ppl">Personas en el coche</label><input id="ppl" type="number" inputmode="numeric" min="1" step="1" value="4"><div class="hint">Cuenta al conductor.</div></div>
+      <div><label for="extra">Peajes / parking (€)</label><input id="extra" type="number" inputmode="decimal" min="0" step="any" placeholder="0"></div>
+    </div>
+  </section>
+
+  <div id="out" aria-live="polite"></div>
+  <footer>Distancias: OpenRouteService · Precios: Ministerio para la Transición Ecológica</footer>
+</main>
+
+<script>
+const $ = id => document.getElementById(id);
+const eur = n => n.toLocaleString("es-ES",{style:"currency",currency:"EUR"});
+const fmt = (n,d=1) => n.toLocaleString("es-ES",{maximumFractionDigits:d});
+const num = id => { const v = parseFloat(String($(id).value).replace(",", ".")); return isNaN(v) ? 0 : v; };
+const esc = s => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
+
+const PROV = "01 Álava|02 Albacete|03 Alicante|04 Almería|05 Ávila|06 Badajoz|07 Illes Balears|08 Barcelona|09 Burgos|10 Cáceres|11 Cádiz|12 Castellón|13 Ciudad Real|14 Córdoba|15 A Coruña|16 Cuenca|17 Girona|18 Granada|19 Guadalajara|20 Gipuzkoa|21 Huelva|22 Huesca|23 Jaén|24 León|25 Lleida|26 La Rioja|27 Lugo|28 Madrid|29 Málaga|30 Murcia|31 Navarra|32 Ourense|33 Asturias|34 Palencia|35 Las Palmas|36 Pontevedra|37 Salamanca|38 Santa Cruz de Tenerife|39 Cantabria|40 Segovia|41 Sevilla|42 Soria|43 Tarragona|44 Teruel|45 Toledo|46 Valencia|47 Valladolid|48 Bizkaia|49 Zamora|50 Zaragoza|51 Ceuta|52 Melilla".split("|");
+$("prov").innerHTML = PROV.map(p => `<option value="${p.slice(0,2)}">${p.slice(3)}</option>`).join("");
+$("prov").value = "28";
+
+/* Ruta */
+let places = ["", ""];
+const labelFor = i => i === 0 ? "Punto de salida" : (i === places.length - 1 ? "Destino final" : "Parada " + i);
+function renderStops(){
+  const box = $("stops"); box.innerHTML = "";
+  places.forEach((p,i) => {
+    const row = document.createElement("div"); row.className = "stop";
+    const wrap = document.createElement("div");
+    const lb = document.createElement("label"); lb.textContent = labelFor(i); lb.htmlFor = "p" + i;
+    const inp = document.createElement("input"); inp.type = "text"; inp.id = "p" + i; inp.value = p; inp.maxLength = 120;
+    inp.placeholder = i === 0 ? "Ej. Sevilla" : "Ciudad o dirección";
+    inp.addEventListener("input", () => { places[i] = inp.value; });
+    wrap.append(lb, inp); row.append(wrap);
+    if(places.length > 2 && i > 0){
+      const b = document.createElement("button"); b.type = "button"; b.className = "x"; b.textContent = "✕";
+      b.setAttribute("aria-label", "Quitar " + labelFor(i));
+      b.addEventListener("click", () => { places.splice(i,1); renderStops(); });
+      row.append(b);
+    }
+    box.append(row);
+  });
+}
+$("add").addEventListener("click", () => {
+  if(places.length >= 8) return;
+  places.splice(places.length - 1, 0, ""); renderStops(); $("p" + (places.length - 2)).focus();
+});
+
+$("go").addEventListener("click", async () => {
+  const list = places.map(p => p.trim()).filter(Boolean), box = $("legs");
+  if(list.length < 2){ box.innerHTML = '<p class="err">Escribe al menos el punto de salida y el destino.</p>'; return; }
+  const btn = $("go"); btn.disabled = true; btn.textContent = "Calculando…"; box.innerHTML = "";
+  try{
+    const r = await fetch("/api/ruta", {method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({places:list, roundTrip:$("rt").checked})});
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "Error");
+    box.innerHTML = d.legs.map(l => `<div><span>${esc(l.desde)} → ${esc(l.hasta)}</span><span>${fmt(l.km)} km</span></div>`).join("") +
+      `<div><strong>Total</strong><strong>${fmt(d.total)} km</strong></div>`;
+    $("km").value = d.total; calc();
+  }catch(e){ box.innerHTML = '<p class="err">' + esc(e.message) + ". Puedes escribir la distancia a mano abajo.</p>"; }
+  finally{ btn.disabled = false; btn.textContent = "Calcular distancia"; }
+});
+
+/* Precio */
+$("getprice").addEventListener("click", async () => {
+  const note = $("pnote"); note.textContent = "Buscando precios…";
+  try{
+    const r = await fetch(`/api/precio?provincia=${$("prov").value}&combustible=${$("fuel").value}`);
+    const d = await r.json();
+    if(!r.ok) throw new Error(d.error || "Error");
+    $("price").value = d.media; calc();
+    note.textContent = `Media de ${d.n} gasolineras: ${fmt(d.media,3)} €/L (la más barata: ${fmt(d.minimo,3)} €/L).`;
+  }catch(e){ note.textContent = e.message + ". Escribe el precio a mano."; }
+});
+
+/* Coste */
+function calc(){
+  const km = num("km"), cons = num("cons"), price = num("price"), extra = num("extra");
+  const ppl = Math.max(1, Math.floor(num("ppl"))), out = $("out");
+  if(!(km > 0 && cons > 0 && price > 0)){ out.innerHTML = '<p class="err">Calcula la distancia y rellena consumo y precio para ver el resultado.</p>'; return; }
+  const liters = km * cons / 100, fuel = liters * price, total = fuel + extra, each = total / ppl;
+  out.innerHTML = `<div class="result"><div class="lbl">Cada persona paga</div><div class="big">${eur(each)}</div><div class="rows">
+    <div><span>Distancia total</span><span>${fmt(km)} km</span></div>
+    <div><span>Gasolina necesaria</span><span>${fmt(liters)} L</span></div>
+    <div><span>Coste de gasolina</span><span>${eur(fuel)}</span></div>
+    ${extra > 0 ? `<div><span>Peajes / parking</span><span>${eur(extra)}</span></div>` : ""}
+    <div><span>Total del viaje</span><span>${eur(total)}</span></div>
+    <div><span>Entre</span><span>${ppl} ${ppl === 1 ? "persona" : "personas"}</span></div></div></div>`;
+}
+["km","cons","price","ppl","extra"].forEach(id => $(id).addEventListener("input", calc));
+renderStops(); calc();
+</script>
+</body>
+</html>
