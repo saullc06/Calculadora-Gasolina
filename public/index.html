@@ -33,6 +33,7 @@ button:disabled{opacity:.6;cursor:default}
 .rows div{display:flex;justify-content:space-between;gap:12px}
 .err{color:var(--muted);text-align:center;font-size:.95rem;margin:0}
 footer{text-align:center;font-size:.8rem;color:var(--muted)}
+.share{display:block;margin-top:16px;text-align:center;padding:12px;border-radius:8px;background:var(--result-ink);color:var(--result);font-weight:600;text-decoration:none}
 </style>
 </head>
 <body>
@@ -55,9 +56,10 @@ footer{text-align:center;font-size:.8rem;color:var(--muted)}
       <div><label for="cons">Consumo (L/100 km)</label><input id="cons" type="number" inputmode="decimal" min="0" step="any" placeholder="Ej. 6.5"></div>
       <div><label for="price">Precio (€/L)</label><input id="price" type="number" inputmode="decimal" min="0" step="any" placeholder="Ej. 1.55"></div>
       <div><label for="prov">Provincia</label><select id="prov"></select></div>
-      <div><label for="fuel">Combustible</label>
+      <div><label for="mun">Ciudad / municipio</label><select id="mun"><option value="">Toda la provincia</option></select></div>
+      <div class="full"><label for="fuel">Combustible</label>
         <select id="fuel"><option value="gasolina95">Gasolina 95</option><option value="gasolina98">Gasolina 98</option><option value="diesel">Diésel</option><option value="dieselplus">Diésel premium</option></select></div>
-      <div class="full"><button type="button" id="getprice">Usar el precio medio de la zona</button><div class="note" id="pnote" aria-live="polite"></div></div>
+      <div class="full"><button type="button" id="getprice">Actualizar precio de la zona</button><div class="note" id="pnote" aria-live="polite"></div></div>
       <div><label for="ppl">Personas en el coche</label><input id="ppl" type="number" inputmode="numeric" min="1" step="1" value="4"><div class="hint">Cuenta al conductor.</div></div>
       <div><label for="extra">Peajes / parking (€)</label><input id="extra" type="number" inputmode="decimal" min="0" step="any" placeholder="0"></div>
     </div>
@@ -121,16 +123,34 @@ $("go").addEventListener("click", async () => {
 });
 
 /* Precio */
-$("getprice").addEventListener("click", async () => {
+let PR = null;
+async function loadPrices(){
   const note = $("pnote"); note.textContent = "Buscando precios…";
   try{
-    const r = await fetch(`/api/precio?provincia=${$("prov").value}&combustible=${$("fuel").value}`);
+    const mun = $("mun").value;
+    const r = await fetch(`/api/precio?provincia=${$("prov").value}` + (mun ? `&municipio=${encodeURIComponent(mun)}` : ""));
     const d = await r.json();
     if(!r.ok) throw new Error(d.error || "Error");
-    $("price").value = d.media; calc();
-    note.textContent = `Media de ${d.n} gasolineras: ${fmt(d.media,3)} €/L (la más barata: ${fmt(d.minimo,3)} €/L).`;
-  }catch(e){ note.textContent = e.message + ". Escribe el precio a mano."; }
-});
+    PR = d;
+    if(!mun){
+      const sel = $("mun"); sel.innerHTML = "";
+      const first = document.createElement("option"); first.value = ""; first.textContent = "Toda la provincia"; sel.append(first);
+      d.municipios.forEach(m => { const o = document.createElement("option"); o.value = m; o.textContent = m; sel.append(o); });
+    }
+    showPrice();
+  }catch(e){ PR = null; note.textContent = e.message + ". Escribe el precio a mano."; }
+}
+function showPrice(){
+  if(!PR) return;
+  const p = PR.precios[$("fuel").value], note = $("pnote");
+  if(!p){ note.textContent = "No hay datos de ese combustible en la zona. Escribe el precio a mano."; return; }
+  $("price").value = p.media; calc();
+  note.textContent = `Media en ${PR.ambito}: ${fmt(p.media,3)} €/L (${p.n} gasolineras). Más barata: ${fmt(p.minimo,3)} €/L en ${p.barata.rotulo}, ${p.barata.direccion}.`;
+}
+$("getprice").addEventListener("click", loadPrices);
+$("prov").addEventListener("change", () => { $("mun").innerHTML = '<option value="">Toda la provincia</option>'; loadPrices(); });
+$("mun").addEventListener("change", loadPrices);
+$("fuel").addEventListener("change", showPrice);
 
 /* Coste */
 function calc(){
@@ -138,15 +158,21 @@ function calc(){
   const ppl = Math.max(1, Math.floor(num("ppl"))), out = $("out");
   if(!(km > 0 && cons > 0 && price > 0)){ out.innerHTML = '<p class="err">Calcula la distancia y rellena consumo y precio para ver el resultado.</p>'; return; }
   const liters = km * cons / 100, fuel = liters * price, total = fuel + extra, each = total / ppl;
+  const wa = "https://wa.me/?text=" + encodeURIComponent(`Viaje de ${fmt(km)} km: total ${eur(total)}, a ${eur(each)} cada uno (${ppl} personas).\n${location.href}`);
   out.innerHTML = `<div class="result"><div class="lbl">Cada persona paga</div><div class="big">${eur(each)}</div><div class="rows">
     <div><span>Distancia total</span><span>${fmt(km)} km</span></div>
     <div><span>Gasolina necesaria</span><span>${fmt(liters)} L</span></div>
     <div><span>Coste de gasolina</span><span>${eur(fuel)}</span></div>
     ${extra > 0 ? `<div><span>Peajes / parking</span><span>${eur(extra)}</span></div>` : ""}
     <div><span>Total del viaje</span><span>${eur(total)}</span></div>
-    <div><span>Entre</span><span>${ppl} ${ppl === 1 ? "persona" : "personas"}</span></div></div></div>`;
+    <div><span>Entre</span><span>${ppl} ${ppl === 1 ? "persona" : "personas"}</span></div></div><a class="share" target="_blank" rel="noopener" href="${wa}">Compartir por WhatsApp</a></div>`;
 }
 ["km","cons","price","ppl","extra"].forEach(id => $(id).addEventListener("input", calc));
+/* Recordar los datos del coche en este navegador */
+const KEYS = ["cons","ppl","fuel","prov"];
+try{ KEYS.forEach(k => { const v = localStorage.getItem("gas_" + k); if(v) $(k).value = v; }); }catch(e){}
+KEYS.forEach(k => $(k).addEventListener("change", () => { try{ localStorage.setItem("gas_" + k, $(k).value); }catch(e){} }));
+$("cons").addEventListener("input", () => { try{ localStorage.setItem("gas_cons", $("cons").value); }catch(e){} });
 renderStops(); calc();
 </script>
 </body>
