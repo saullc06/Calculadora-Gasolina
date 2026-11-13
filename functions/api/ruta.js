@@ -33,21 +33,30 @@ export async function onRequestPost({ request, env }) {
     if (body.roundTrip) { points.push(points[0]); names.push(places[0]); }
 
     // 2) Ruta en coche pasando por todos los puntos (formato GeoJSON)
-    const r = await fetch(`${ORS}/openrouteservice/v2/directions/driving-car/geojson`, {
-      method: "POST",
-      headers: { "Authorization": env.ORS_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ coordinates: points, instructions: false }),
-    });
-    if (!r.ok) throw new Error("ruta " + r.status + ": " + (await r.text()).slice(0, 150));
-    const data = await r.json();
-    const f = data.features && data.features[0];
-    if (!f) throw new Error("directions");
+    const dir = async (pts) => {
+      const r = await fetch(`${ORS}/openrouteservice/v2/directions/driving-car/geojson`, {
+        method: "POST",
+        headers: { "Authorization": env.ORS_API_KEY, "Content-Type": "application/json" },
+        body: JSON.stringify({ coordinates: pts }),
+      });
+      if (!r.ok) throw new Error("ruta " + r.status + ": " + (await r.text()).slice(0, 150));
+      const f = (await r.json()).features?.[0];
+      if (!f) throw new Error("ruta: respuesta sin datos");
+      return f;
+    };
+    const f = await dir(points);
+    const sum = f.properties.summary;
 
-    const legs = f.properties.segments.map((s, i) => ({
-      desde: names[i], hasta: names[i + 1], km: Math.round(s.distance / 100) / 10,
-    }));
-    const total = Math.round(f.properties.summary.distance / 100) / 10;
-    const minutos = Math.round(f.properties.summary.duration / 60);
+    // Km de cada tramo: si la respuesta no trae los tramos, se piden uno a uno
+    let dist = (f.properties.segments || []).map(s => s.distance);
+    if (dist.length !== points.length - 1) {
+      dist = [];
+      for (let i = 0; i < points.length - 1; i++)
+        dist.push((await dir([points[i], points[i + 1]])).properties.summary.distance);
+    }
+    const legs = dist.map((m, i) => ({ desde: names[i], hasta: names[i + 1], km: Math.round(m / 100) / 10 }));
+    const total = Math.round(sum.distance / 100) / 10;
+    const minutos = Math.round(sum.duration / 60);
 
     // Aligerar la línea del mapa (máx. ~800 puntos)
     let g = f.geometry.coordinates;
