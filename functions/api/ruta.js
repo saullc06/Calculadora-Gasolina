@@ -1,7 +1,7 @@
 // Cloudflare Pages Function: POST /api/ruta
 // Recibe { places: ["Sevilla","Córdoba"], roundTrip: false } y devuelve los km de cada tramo.
 // Usa OpenRouteService (clave en la variable de entorno ORS_API_KEY, nunca en el navegador).
-const ORS = "https://api.openrouteservice.org";
+const ORS = "https://api.heigit.org"; // la URL antigua api.openrouteservice.org está retirada
 
 const json = (data, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
@@ -19,8 +19,8 @@ export async function onRequestPost({ request, env }) {
   try {
     // 1) Geocodificar cada lugar
     const coords = await Promise.all(places.map(async (text) => {
-      const url = `${ORS}/geocode/search?api_key=${encodeURIComponent(env.ORS_API_KEY)}&size=1&text=${encodeURIComponent(text)}`;
-      const r = await fetch(url);
+      const url = `${ORS}/pelias/v1/search?api_key=${encodeURIComponent(env.ORS_API_KEY)}&size=1&text=${encodeURIComponent(text)}`;
+      const r = await fetch(url, { headers: { Authorization: env.ORS_API_KEY } });
       if (!r.ok) throw new Error("geocode");
       const data = await r.json();
       const f = data.features && data.features[0];
@@ -32,22 +32,30 @@ export async function onRequestPost({ request, env }) {
     const names = places.slice();
     if (body.roundTrip) { points.push(points[0]); names.push(places[0]); }
 
-    // 2) Ruta en coche pasando por todos los puntos
-    const r = await fetch(`${ORS}/v2/directions/driving-car`, {
+    // 2) Ruta en coche pasando por todos los puntos (formato GeoJSON)
+    const r = await fetch(`${ORS}/openrouteservice/v2/directions/driving-car/geojson`, {
       method: "POST",
       headers: { "Authorization": env.ORS_API_KEY, "Content-Type": "application/json" },
-      body: JSON.stringify({ coordinates: points, geometry: false, instructions: false }),
+      body: JSON.stringify({ coordinates: points, instructions: false }),
     });
     if (!r.ok) throw new Error("directions");
     const data = await r.json();
-    const route = data.routes && data.routes[0];
-    if (!route) throw new Error("directions");
+    const f = data.features && data.features[0];
+    if (!f) throw new Error("directions");
 
-    const legs = route.segments.map((s, i) => ({
+    const legs = f.properties.segments.map((s, i) => ({
       desde: names[i], hasta: names[i + 1], km: Math.round(s.distance / 100) / 10,
     }));
-    const total = Math.round(route.summary.distance / 100) / 10;
-    return json({ legs, total });
+    const total = Math.round(f.properties.summary.distance / 100) / 10;
+    const minutos = Math.round(f.properties.summary.duration / 60);
+
+    // Aligerar la línea del mapa (máx. ~800 puntos)
+    let g = f.geometry.coordinates;
+    const paso = Math.ceil(g.length / 800);
+    g = g.filter((_, i) => i % paso === 0 || i === g.length - 1)
+         .map(c => [Math.round(c[0] * 1e5) / 1e5, Math.round(c[1] * 1e5) / 1e5]);
+
+    return json({ legs, total, minutos, geometry: g, puntos: points });
   } catch (e) {
     if (String(e.message).startsWith("notfound:"))
       return json({ error: "No encuentro el lugar: " + e.message.slice(9) }, 404);
