@@ -20,8 +20,8 @@ export async function onRequestPost({ request, env }) {
     // 1) Geocodificar cada lugar
     const coords = await Promise.all(places.map(async (text) => {
       const url = `${ORS}/pelias/v1/search?api_key=${encodeURIComponent(env.ORS_API_KEY)}&size=1&text=${encodeURIComponent(text)}`;
-      const r = await fetch(url, { headers: { Authorization: env.ORS_API_KEY } });
-      if (!r.ok) throw new Error("geocode");
+      const r = await fetch(url);
+      if (!r.ok) throw new Error("geocodificación " + r.status + ": " + (await r.text()).slice(0, 150));
       const data = await r.json();
       const f = data.features && data.features[0];
       if (!f) throw new Error("notfound:" + text);
@@ -38,7 +38,7 @@ export async function onRequestPost({ request, env }) {
       headers: { "Authorization": env.ORS_API_KEY, "Content-Type": "application/json" },
       body: JSON.stringify({ coordinates: points, instructions: false }),
     });
-    if (!r.ok) throw new Error("directions");
+    if (!r.ok) throw new Error("ruta " + r.status + ": " + (await r.text()).slice(0, 150));
     const data = await r.json();
     const f = data.features && data.features[0];
     if (!f) throw new Error("directions");
@@ -59,6 +59,6 @@ export async function onRequestPost({ request, env }) {
   } catch (e) {
     if (String(e.message).startsWith("notfound:"))
       return json({ error: "No encuentro el lugar: " + e.message.slice(9) }, 404);
-    return json({ error: "No se pudo calcular la ruta" }, 502);
+    return json({ error: "No se pudo calcular la ruta (" + String(e.message).slice(0, 200) + ")" }, 502);
   }
 }
